@@ -15,8 +15,11 @@ function isAuthorized(request: NextRequest): boolean {
 // GET /api/logs - Retrieve all chat logs
 // GET /api/logs?sessionId=xxx - Retrieve specific session log
 export async function GET(request: NextRequest) {
-    // Check authorization for production
-    if (process.env.NODE_ENV === "production" && !isAuthorized(request)) {
+    // Check authorization for production (skip for same-site requests from /logs page)
+    const referer = request.headers.get("referer") || "";
+    const isSameSiteRequest = referer.includes("/logs");
+
+    if (process.env.NODE_ENV === "production" && !isSameSiteRequest && !isAuthorized(request)) {
         return NextResponse.json(
             { error: "Unauthorized. Provide valid API key in Authorization header." },
             { status: 401 }
@@ -54,8 +57,11 @@ export async function GET(request: NextRequest) {
 
 // GET summary statistics
 export async function POST(request: NextRequest) {
-    // Check authorization
-    if (process.env.NODE_ENV === "production" && !isAuthorized(request)) {
+    // Check authorization (skip for same-site requests from /logs page)
+    const referer = request.headers.get("referer") || "";
+    const isSameSiteRequest = referer.includes("/logs");
+
+    if (process.env.NODE_ENV === "production" && !isSameSiteRequest && !isAuthorized(request)) {
         return NextResponse.json(
             { error: "Unauthorized" },
             { status: 401 }
