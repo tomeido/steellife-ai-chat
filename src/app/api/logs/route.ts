@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chatLogs } from "../a2a/[[...path]]/route";
+import { chatLogs } from "@/lib/steellife-executor";
 
 // Simple API key check for admin access
 const ADMIN_API_KEY = process.env.LOGS_API_KEY || "steellife-admin-2026";

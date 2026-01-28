@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 
 interface ChatMessage {
     timestamp: string;
@@ -121,7 +122,7 @@ export default function LogsPage() {
                         고객 문의 내역 관리
                     </p>
                 </div>
-                <a
+                <Link
                     href="/"
                     style={{
                         padding: '10px 20px',
@@ -133,7 +134,7 @@ export default function LogsPage() {
                     }}
                 >
                     홈으로
-                </a>
+                </Link>
             </header>
 
             {/* Stats */}
