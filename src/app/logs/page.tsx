@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
 interface ChatMessage {
@@ -21,7 +22,10 @@ interface LogsResponse {
     logs: ChatLog[];
 }
 
-export default function LogsPage() {
+function LogsContent() {
+    const searchParams = useSearchParams();
+    const apiKey = searchParams.get('key') || '';
+
     const [logs, setLogs] = useState<ChatLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -32,14 +36,24 @@ export default function LogsPage() {
         languageBreakdown: Record<string, number>;
     } | null>(null);
 
+    const getAuthHeaders = (): HeadersInit => {
+        if (apiKey) {
+            return { 'Authorization': `Bearer ${apiKey}` };
+        }
+        return {};
+    };
+
     useEffect(() => {
         fetchLogs();
         fetchStats();
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [apiKey]);
 
     const fetchLogs = async () => {
         try {
-            const response = await fetch('/api/logs');
+            const response = await fetch('/api/logs', {
+                headers: getAuthHeaders()
+            });
             if (!response.ok) throw new Error('Failed to fetch logs');
             const data: LogsResponse = await response.json();
             setLogs(data.logs);
@@ -52,7 +66,10 @@ export default function LogsPage() {
 
     const fetchStats = async () => {
         try {
-            const response = await fetch('/api/logs', { method: 'POST' });
+            const response = await fetch('/api/logs', {
+                method: 'POST',
+                headers: getAuthHeaders()
+            });
             if (!response.ok) return;
             const data = await response.json();
             setStats(data);
@@ -354,5 +371,33 @@ export default function LogsPage() {
                 )}
             </div>
         </div>
+    );
+}
+
+// Loading fallback component
+function LoadingFallback() {
+    return (
+        <div style={{
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: '#1a1a2e',
+            color: 'white',
+        }}>
+            <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '40px', marginBottom: '16px' }}>⏳</div>
+                <p>로딩 중...</p>
+            </div>
+        </div>
+    );
+}
+
+// Main page component with Suspense boundary
+export default function LogsPage() {
+    return (
+        <Suspense fallback={<LoadingFallback />}>
+            <LogsContent />
+        </Suspense>
     );
 }
