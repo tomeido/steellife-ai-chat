@@ -6,21 +6,12 @@ import {
     ExecutionEventBus,
 } from "@a2a-js/sdk/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import {
+    ChatLog,
+    saveChatLog
+} from "./log-storage";
 
-// Chat log interface
-export interface ChatLog {
-    sessionId: string;
-    startTime: string;
-    messages: {
-        timestamp: string;
-        role: string;
-        content: string;
-        language?: string;
-    }[];
-}
-
-// In-memory log storage (for development - in production use Vercel Blob/KV)
-export const chatLogs: Map<string, ChatLog> = new Map();
+export type { ChatLog };
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
@@ -33,9 +24,12 @@ function detectLanguage(text: string): string {
     return 'en'; // Default to English
 }
 
+// In-memory store for conversation history (session-level, separate from persistent logs)
+const sessionHistory: Record<string, Message[]> = {};
+const sessionLogs: Record<string, ChatLog> = {};
+
 // STEELLIFE Executor
 export class SteellifeExecutor implements AgentExecutor {
-    private static historyStore: Record<string, Message[]> = {};
 
     async execute(
         requestContext: RequestContext,
@@ -56,39 +50,45 @@ export class SteellifeExecutor implements AgentExecutor {
 
         // 2. Manage history
         const contextId = requestContext.contextId;
-        if (!SteellifeExecutor.historyStore[contextId]) {
-            SteellifeExecutor.historyStore[contextId] = [];
-            
-            // Initialize chat log
-            chatLogs.set(contextId, {
+        let chatLog: ChatLog;
+
+        if (!sessionHistory[contextId]) {
+            sessionHistory[contextId] = [];
+
+            // Initialize chat log for new session
+            chatLog = {
                 sessionId: contextId,
                 startTime: new Date().toISOString(),
                 messages: []
-            });
+            };
+            sessionLogs[contextId] = chatLog;
+        } else {
+            chatLog = sessionLogs[contextId];
         }
-        const history = SteellifeExecutor.historyStore[contextId];
-        const chatLog = chatLogs.get(contextId);
+
+        const history = sessionHistory[contextId];
 
         // 3. Extract user message
         const incomingMessage = requestContext.userMessage;
         let userText = "";
         if (incomingMessage) {
             history.push(incomingMessage);
-            
+
             // Extract text for logging
             const textPart = incomingMessage.parts.find(part => part.kind === "text");
             userText = textPart?.text || "";
-            
+
             // Log user message
-            if (chatLog) {
-                const detectedLang = detectLanguage(userText);
-                chatLog.messages.push({
-                    timestamp: new Date().toISOString(),
-                    role: "user",
-                    content: userText,
-                    language: detectedLang
-                });
-            }
+            const detectedLang = detectLanguage(userText);
+            chatLog.messages.push({
+                timestamp: new Date().toISOString(),
+                role: "user",
+                content: userText,
+                language: detectedLang
+            });
+
+            // Save to persistent storage
+            await saveChatLog(chatLog);
         }
 
         // 4. Prepare Gemini messages with system prompt
@@ -98,12 +98,12 @@ export class SteellifeExecutor implements AgentExecutor {
                 parts: [{ text: systemPrompt }]
             },
             {
-                role: "model", 
+                role: "model",
                 parts: [{ text: "I understand. I am the STEELLIFE customer service AI assistant. I will respond in the same language the user uses. How may I help you today?" }]
             },
             ...history.map(msg => {
                 const textPart = msg.parts.find(part => part.kind === "text");
-                return { 
+                return {
                     role: msg.role === "user" ? "user" : "model",
                     parts: [{ text: textPart?.text || "" }]
                 };
@@ -125,16 +125,17 @@ export class SteellifeExecutor implements AgentExecutor {
                 contextId,
             };
             history.push(responseMessage);
-            
+
             // Log assistant response
-            if (chatLog) {
-                chatLog.messages.push({
-                    timestamp: new Date().toISOString(),
-                    role: "assistant",
-                    content: geminiText
-                });
-            }
-            
+            chatLog.messages.push({
+                timestamp: new Date().toISOString(),
+                role: "assistant",
+                content: geminiText
+            });
+
+            // Save to persistent storage
+            await saveChatLog(chatLog);
+
             eventBus.publish(responseMessage);
         } catch (error) {
             console.error("Error calling Gemini API:", error);
@@ -152,15 +153,5 @@ export class SteellifeExecutor implements AgentExecutor {
         }
     }
 
-    // Get chat log for a session
-    static getChatLog(contextId: string): ChatLog | undefined {
-        return chatLogs.get(contextId);
-    }
-
-    // Get all chat logs
-    static getAllChatLogs(): ChatLog[] {
-        return Array.from(chatLogs.values());
-    }
-
-    cancelTask = async (): Promise<void> => {};
+    cancelTask = async (): Promise<void> => { };
 }

@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chatLogs } from "@/lib/steellife-executor";
+import {
+    ChatLog,
+    getAllChatLogs,
+    getChatLog,
+    deleteChatLog,
+    clearAllLogs
+} from "@/lib/log-storage";
 
 // Simple API key check for admin access
 const ADMIN_API_KEY = process.env.LOGS_API_KEY || "steellife-admin-2026";
@@ -31,7 +37,7 @@ export async function GET(request: NextRequest) {
 
     if (sessionId) {
         // Return specific session log
-        const log = chatLogs.get(sessionId);
+        const log = await getChatLog(sessionId);
         if (!log) {
             return NextResponse.json(
                 { error: "Session not found" },
@@ -42,12 +48,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Return all logs
-    const allLogs = Array.from(chatLogs.values());
-
-    // Sort by startTime descending (newest first)
-    allLogs.sort((a, b) =>
-        new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
-    );
+    const allLogs = await getAllChatLogs();
 
     return NextResponse.json({
         total: allLogs.length,
@@ -68,14 +69,14 @@ export async function POST(request: NextRequest) {
         );
     }
 
-    const allLogs = Array.from(chatLogs.values());
+    const allLogs = await getAllChatLogs();
 
     // Calculate statistics
     const stats = {
         totalSessions: allLogs.length,
-        totalMessages: allLogs.reduce((acc, log) => acc + log.messages.length, 0),
+        totalMessages: allLogs.reduce((acc: number, log: ChatLog) => acc + log.messages.length, 0),
         languageBreakdown: {} as Record<string, number>,
-        recentSessions: allLogs.slice(0, 10).map(log => ({
+        recentSessions: allLogs.slice(0, 10).map((log: ChatLog) => ({
             sessionId: log.sessionId,
             startTime: log.startTime,
             messageCount: log.messages.length,
@@ -84,10 +85,10 @@ export async function POST(request: NextRequest) {
     };
 
     // Count by language
-    allLogs.forEach(log => {
+    allLogs.forEach((log: ChatLog) => {
         log.messages
-            .filter(m => m.role === "user" && m.language)
-            .forEach(m => {
+            .filter((m: { role: string; language?: string }) => m.role === "user" && m.language)
+            .forEach((m: { role: string; language?: string }) => {
                 const lang = m.language || "unknown";
                 stats.languageBreakdown[lang] = (stats.languageBreakdown[lang] || 0) + 1;
             });
@@ -111,8 +112,8 @@ export async function DELETE(request: NextRequest) {
     const sessionId = searchParams.get("sessionId");
 
     if (sessionId) {
-        if (chatLogs.has(sessionId)) {
-            chatLogs.delete(sessionId);
+        const deleted = await deleteChatLog(sessionId);
+        if (deleted) {
             return NextResponse.json({ message: `Session ${sessionId} deleted` });
         }
         return NextResponse.json(
@@ -122,6 +123,6 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Clear all logs
-    chatLogs.clear();
+    await clearAllLogs();
     return NextResponse.json({ message: "All logs cleared" });
 }
