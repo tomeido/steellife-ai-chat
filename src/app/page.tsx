@@ -61,7 +61,7 @@ export default function Home() {
           flexWrap: 'wrap',
         }}>
           <a
-            href="http://www.steellife.net"
+            href="https://tomeido.github.io/steellife-website/"
             target="_blank"
             rel="noopener noreferrer"
             style={{
